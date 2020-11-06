@@ -18,14 +18,16 @@
 
 #pragma once
 
+
 #include "synergy/KeyState.h"
 #include "common/stdmap.h"
 #include "common/stdset.h"
 #include "common/stdvector.h"
 
 #include <Carbon/Carbon.h>
+#include "OSXCRReference.h"
+#include "OSXKeyboardGroups.h"
 
-typedef TISInputSourceRef KeyLayout;
 class IOSXKeyResource;
 
 //! OS X key state
@@ -106,7 +108,6 @@ protected:
 
 private:
     class KeyResource;
-    typedef std::vector<KeyLayout> GroupList;
 
     // Add hard coded special keys to a synergy::KeyMap.
     void                getKeyMapForSpecialKeys(
@@ -117,14 +118,10 @@ private:
                             SInt32 group, const IOSXKeyResource& r) const;
 
     // Get the available keyboard groups
-    bool                getGroups(GroupList&) const;
+    bool                getGroups(OSXKeyboardGroups&) const;
 
     // Change active keyboard group to group
     void                setGroup(SInt32 group);
-
-    // Check if the keyboard layout has changed and update keyboard state
-    // if so.
-    void                checkKeyboardLayout();
 
     // Send an event for the given modifier key
     void                handleModifierKey(void* target,
@@ -170,7 +167,7 @@ private:
 
     VirtualKeyMap        m_virtualKeyMap;
     mutable UInt32        m_deadKeyState;
-    GroupList            m_groups;
+    OSXKeyboardGroups   m_groups;
     GroupMap            m_groupMap;
     bool                m_shiftPressed;
     bool                m_controlPressed;

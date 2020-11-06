@@ -253,9 +253,9 @@ OSXKeyState::mapKeyFromEvent(KeyIDs& ids,
     }
 
     // get keyboard info
-    TISInputSourceRef currentKeyboardLayout = TISCopyCurrentKeyboardLayoutInputSource(); 
+    CFReference<TISInputSourceRef> currentKeyboardLayout(TISCopyCurrentKeyboardLayoutInputSource());
 
-    if (currentKeyboardLayout == NULL) {
+    if (currentKeyboardLayout.get() == NULL) {
         return kKeyNone;
     }
 
@@ -288,7 +288,7 @@ OSXKeyState::mapKeyFromEvent(KeyIDs& ids,
     }
 
     // translate via uchr resource
-    CFDataRef ref = (CFDataRef) TISGetInputSourceProperty(currentKeyboardLayout,
+    CFDataRef ref = (CFDataRef) TISGetInputSourceProperty(currentKeyboardLayout.get(),
                                 kTISPropertyUnicodeKeyLayoutData);
     const UCKeyboardLayout* layout = (const UCKeyboardLayout*) CFDataGetBytePtr(ref);
     const bool layoutValid = (layout != NULL);
@@ -397,9 +397,9 @@ OSXKeyState::pollActiveModifiers() const
 SInt32
 OSXKeyState::pollActiveGroup() const
 {
-    TISInputSourceRef keyboardLayout = TISCopyCurrentKeyboardLayoutInputSource();
+    CFReference<TISInputSourceRef> keyboardLayout(TISCopyCurrentKeyboardLayoutInputSource());
     CFDataRef id = (CFDataRef)TISGetInputSourceProperty(
-                        keyboardLayout, kTISPropertyInputSourceID);
+                        keyboardLayout.get(), kTISPropertyInputSourceID);
     
     GroupMap::const_iterator i = m_groupMap.find(id);
     if (i != m_groupMap.end()) {
@@ -430,13 +430,11 @@ void
 OSXKeyState::getKeyMap(synergy::KeyMap& keyMap)
 {
     // update keyboard groups
-    if (getGroups(m_groups)) {
+    if (getGroups(m_groups) > 0) {
         m_groupMap.clear();
         SInt32 numGroups = (SInt32)m_groups.size();
         for (SInt32 g = 0; g < numGroups; ++g) {
-            CFDataRef id = (CFDataRef)TISGetInputSourceProperty(
-                                m_groups[g], kTISPropertyInputSourceID);
-            m_groupMap[id] = g;
+            m_groupMap[m_groups.getSourceProperty(g, kTISPropertyUnicodeKeyLayoutData)] = g;
         }
     }
 
@@ -450,8 +448,7 @@ OSXKeyState::getKeyMap(synergy::KeyMap& keyMap)
         
         // add regular keys
         // try uchr resource first
-        CFDataRef resourceRef = (CFDataRef)TISGetInputSourceProperty(
-            m_groups[g], kTISPropertyUnicodeKeyLayoutData);
+        CFDataRef resourceRef = m_groups.getSourceProperty(g, kTISPropertyUnicodeKeyLayoutData);
 
         layoutValid = resourceRef != NULL;
         if (layoutValid)
@@ -832,53 +829,32 @@ OSXKeyState::handleModifierKey(void* target,
 }
 
 bool
-OSXKeyState::getGroups(GroupList& groups) const
+OSXKeyState::getGroups(OSXKeyboardGroups& groups) const
 {
-    CFIndex n;
-    bool gotLayouts = false;
-
     // get number of layouts
     CFStringRef keys[] = { kTISPropertyInputSourceCategory };
     CFStringRef values[] = { kTISCategoryKeyboardInputSource };
-    CFDictionaryRef dict = CFDictionaryCreate(NULL, (const void **)keys, (const void **)values, 1, NULL, NULL);
-    CFArrayRef kbds = TISCreateInputSourceList(dict, false);
-    n = CFArrayGetCount(kbds);
-    gotLayouts = (n != 0);
+    CFReference<CFDictionaryRef> dict(CFDictionaryCreate(NULL, (const void **)keys, (const void **)values, 1, NULL, NULL));
+    CFArrayRef kbds {TISCreateInputSourceList(dict.get(), false)};
 
-    if (!gotLayouts) {
+    bool result {true};
+
+    if (CFArrayGetCount(kbds) > 0) {
+        groups = std::move(kbds);
+
+    }
+    else {
         LOG((CLOG_DEBUG1 "can't get keyboard layouts"));
-        return false;
+        result = false;
     }
 
-    // get each layout
-    groups.clear();
-    for (CFIndex i = 0; i < n; ++i) {
-        bool addToGroups = true;
-        TISInputSourceRef keyboardLayout = 
-            (TISInputSourceRef)CFArrayGetValueAtIndex(kbds, i);
-
-        if (addToGroups)
-            groups.push_back(keyboardLayout);
-    }
-    return true;
+    return result;
 }
 
 void
 OSXKeyState::setGroup(SInt32 group)
 {
-    TISSetInputMethodKeyboardLayoutOverride(m_groups[group]);
-}
-
-void
-OSXKeyState::checkKeyboardLayout()
-{
-    // XXX -- should call this when notified that groups have changed.
-    // if no notification for that then we should poll.
-    GroupList groups;
-    if (getGroups(groups) && groups != m_groups) {
-        updateKeyMap();
-        updateKeyState();
-    }
+    TISSetInputMethodKeyboardLayoutOverride(m_groups.getSource(group));
 }
 
 void
